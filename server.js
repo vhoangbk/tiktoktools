@@ -5,7 +5,7 @@ const { Server } = require('socket.io');
 const { TikTokLiveConnection, WebcastEvent, ControlEvent } = require('tiktok-live-connector');
 
 const PORT = process.env.PORT || 3000;
-const DEFAULT_USERNAME = process.env.TIKTOK_USERNAME || '@truclamtuhanh';
+const DEFAULT_USERNAME = process.env.TIKTOK_USERNAME || 'bodondau';
 const RECONNECT_DELAY_MS = 5000;
 const MAX_RECONNECTS = 5;
 
@@ -60,14 +60,27 @@ async function connectTo(username, isRetry = false) {
   streamEnded = false;
   if (!isRetry) reconnects = 0;
 
-  const conn = new TikTokLiveConnection(username);
+  const conn = new TikTokLiveConnection(username, {});
   connection = conn;
 
   // Forward every event to all socket clients
-  conn.on(WebcastEvent.CHAT, (d) => io.emit('chat', d));
-  conn.on(WebcastEvent.GIFT, (d) => io.emit('gift', d));
-  conn.on(WebcastEvent.MEMBER, (d) => io.emit('member', d));
-  conn.on(WebcastEvent.LIKE, (d) => io.emit('like', d));
+  const who = (d) => d?.user?.nickname || d?.id || 'unknown';
+  conn.on(WebcastEvent.CHAT, (d) => {
+    console.log(`[chat] ${who(d)}: ${d?.content}`);
+    io.emit('chat', d);
+  });
+  conn.on(WebcastEvent.GIFT, (d) => {
+    console.log(`[gift] ${who(d)} ${d.gift.describe} --> type: ${d?.gift.type} x${d?.repeatCount ?? 1}`);
+    io.emit('gift', d);
+  });
+  conn.on(WebcastEvent.MEMBER, (d) => {
+    console.log(`[member] ${who(d)} joined`);
+    io.emit('member', d);
+  });
+  conn.on(WebcastEvent.LIKE, (d) => {
+    console.log(`[like] ${who(d)} liked`);
+    io.emit('like', d);
+  });
 
   conn.on(WebcastEvent.STREAM_END, () => {
     streamEnded = true;
@@ -106,19 +119,35 @@ io.on('connection', (socket) => {
     username: currentUsername,
   });
 
+  socket.conn.on('upgrade', (transport) => {
+    console.log(`[socket] ${socket.id} transport upgraded to ${transport.name}`);
+  });
+
   socket.on('start', (username) => {
+    console.log(`[socket] ${socket.id} -> start`, username);
     const name = String(username || '').trim().replace(/^@/, '');
     if (!name) return socket.emit('error_event', { message: 'Username is required' });
     connectTo(name);
   });
 
   socket.on('stop', () => {
+    console.log(`[socket] ${socket.id} -> stop`);
     streamEnded = true; // suppress auto-reconnect
     teardown();
     emitStatus('idle');
   });
 
-  socket.on('disconnect', () => console.log('[client] disconnected', socket.id));
+  socket.on('error', (err) => {
+    console.error(`[socket] ${socket.id} error:`, err && err.message ? err.message : err);
+  });
+
+  socket.on('disconnect', (reason) => {
+    console.log(`[socket] disconnected id=${socket.id} reason=${reason} total=${io.engine.clientsCount}`);
+  });
+});
+
+io.engine.on('connection_error', (err) => {
+  console.error(`[socket] connection_error code=${err.code} message=${err.message}`);
 });
 
 process.on('unhandledRejection', (e) => console.error('[unhandledRejection]', e));
