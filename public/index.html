@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <title>TikTok Live Test Client</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 16px; background: #111; color: #eee; }
+    input, button { padding: 6px 10px; font-size: 14px; }
+    #status { margin: 8px 0; font-weight: bold; }
+    #log { height: 70vh; overflow-y: auto; background: #1b1b1b; padding: 8px; font: 12px/1.5 monospace; }
+    .chat { color: #7dd3fc; } .gift { color: #fbbf24; } .member { color: #86efac; }
+    .like { color: #f9a8d4; } .sys { color: #f87171; }
+  </style>
+</head>
+<body>
+  <h3>TikTok Live → Socket.IO</h3>
+  <input id="user" placeholder="username (không cần @)">
+  <button id="start">Connect</button>
+  <button id="stop">Stop</button>
+  <div id="status">status: idle</div>
+  <div id="log"></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    const log = document.getElementById('log');
+    const statusEl = document.getElementById('status');
+
+    function add(cls, text) {
+      const div = document.createElement('div');
+      div.className = cls;
+      div.textContent = `[${new Date().toLocaleTimeString()}] ${text}`;
+      log.appendChild(div);
+      if (log.children.length > 500) log.removeChild(log.firstChild);
+      log.scrollTop = log.scrollHeight;
+    }
+    const nick = (d) => d.user?.nickname || d.nickname || d.uniqueId || '?';
+
+    socket.on('chat', (d) => add('chat', `💬 ${nick(d)}: ${d.comment}`));
+    socket.on('gift', (d) => add('gift', `🎁 ${nick(d)} gift ${d.giftDetails?.giftName || d.giftId} x${d.repeatCount ?? 1}`));
+    socket.on('member', (d) => add('member', `👋 ${nick(d)} joined`));
+    socket.on('like', (d) => add('like', `❤️ ${nick(d)} liked x${d.likeCount} (total ${d.totalLikeCount})`));
+    socket.on('status', (s) => {
+      statusEl.textContent = `status: ${s.status}${s.username ? ' @' + s.username : ''}${s.message ? ' - ' + s.message : ''}`;
+      add('sys', `⚙️ ${JSON.stringify(s)}`);
+    });
+    socket.on('error_event', (e) => add('sys', `❌ ${e.message}`));
+    socket.on('disconnect', () => add('sys', '⚠️ Socket to server lost'));
+
+    document.getElementById('start').onclick = () => socket.emit('start', document.getElementById('user').value);
+    document.getElementById('stop').onclick = () => socket.emit('stop');
+  </script>
+</body>
+</html>
